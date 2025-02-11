@@ -8,8 +8,8 @@ I use nix, so i declared a shell.nix
 
 Usage:
 
-Clone the repo
-nix-shell
+Clone the repo <br>
+nix-shell <br>
 go build -o nmap-viz ./cmd/nmap-internal-viz/
 
 ## Usage
