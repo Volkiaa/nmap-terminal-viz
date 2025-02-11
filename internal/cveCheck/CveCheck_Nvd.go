@@ -41,7 +41,7 @@ func FetchCVEs(product, version string) ([]string, string) {
 
 	// Retry settings
 	maxRetries := 3
-	delay := 2 * time.Second
+	delay := time.Second
 	var cves *nvdapi.CVEResponse
 
 	log.Printf("Querying the NVD API for CVE Infos for %s %s (Might be slow)", product, normalizedVersion)

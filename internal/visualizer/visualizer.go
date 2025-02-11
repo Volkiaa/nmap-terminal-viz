@@ -12,9 +12,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
-const (
-	barWidth = 40
-)
+const barWidth = 40
 
 var (
 	green  = color.New(color.FgGreen)
@@ -29,7 +27,7 @@ var stateColors = map[string]*color.Color{
 	"filtered": yellow,
 }
 
-func Display(result *nmap.ScanResult) {
+func Display(result *nmap.ScanResult) (map[uint16][]string, map[string][]string) {
 	ports := aggregatePortData(result)
 	total := totalPorts(ports)
 
@@ -40,29 +38,51 @@ func Display(result *nmap.ScanResult) {
 
 	// Show port/service table
 	renderPortTable(result)
+
+	// Categorize hosts by ports and services
+	ipListsByPort, ipListsByService := categorizeHostsByPortsAndServices(result)
+
+	// Save the lists of IPs by service to files
+	saveIPListsByService(ipListsByService)
+
+	// Return the lists of IPs by port and service
+	return ipListsByPort, ipListsByService
 }
-func getHostAddress(host nmap.Host) string {
-	for _, addr := range host.Addresses {
-		if addr.AddrType == "ipv4" || addr.AddrType == "ipv6" {
-			return addr.Addr
+
+func categorizeHostsByPortsAndServices(result *nmap.ScanResult) (map[uint16][]string, map[string][]string) {
+	ipListsByPort := make(map[uint16][]string)
+	ipListsByService := make(map[string][]string)
+
+	for _, host := range result.Hosts {
+		hostAddress := getHostAddress(host)
+		for _, port := range host.Ports {
+			ipListsByPort[port.PortID] = append(ipListsByPort[port.PortID], hostAddress)
+			serviceKey := formatServiceKey(port.Service.Name, port.Service.Version)
+			if serviceKey == "@" {
+				serviceKey = "Undefined service"
+			}
+			ipListsByService[serviceKey] = append(ipListsByService[serviceKey], hostAddress)
 		}
 	}
-	return "N/A" // Return "N/A" if no valid address is found
+
+	printIPListsByPort(ipListsByPort)
+	printIPListsByService(ipListsByService)
+
+	return ipListsByPort, ipListsByService
 }
 
 func renderPortTable(result *nmap.ScanResult) {
 	fmt.Println("\nPort/Service Details ")
 
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Port", "Protocol", "State", "Service","Application","Version", "CVEs", "Most Critical CVE"})
+	table.SetHeader([]string{"Port", "Protocol", "State", "Service", "Application", "Version", "CVEs", "Most Critical CVE"})
 	table.SetBorder(false)
 	table.SetAutoWrapText(false)
 
 	for _, host := range result.Hosts {
-		hostAdress:=getHostAddress(host)
+		hostAddress := getHostAddress(host)
 		for _, port := range host.Ports {
 			stateColor := stateColors[port.State.State]
-			// Fetch CVEs for the service
 			cves, criticalCVE := cvechecker.FetchCVEs(port.Service.Product, port.Service.Version)
 			cveList := strings.Join(cves, ", ")
 
@@ -73,15 +93,16 @@ func renderPortTable(result *nmap.ScanResult) {
 				port.Service.Name,
 				port.Service.Product,
 				port.Service.Version,
-				fmt.Sprintf("%d",len(cveList)),
+				fmt.Sprintf("%d", len(cveList)),
 				criticalCVE,
 			}
 			table.Append(row)
 		}
-		magenta.Println("Details for ", hostAdress) // Use the helper function to get the host address
+		magenta.Println("Details for ", hostAddress)
 	}
 	table.Render()
 }
+
 func aggregatePortData(result *nmap.ScanResult) map[string]int {
 	portCounts := make(map[string]int)
 	for _, host := range result.Hosts {
@@ -105,13 +126,11 @@ func createProgressBar(state string, count, total int) {
 		return
 	}
 
-	//percent := (float64(count) / float64(total)) * 100
 	colorFunc := stateColors[state].SprintFunc()
-
 	template := fmt.Sprintf(`{{ cyan "%s" }} {{ bar . "%s" "█" (cycle . "%s") " " }} {{ percent . }} ({{ counters . }})`,
 		strings.ToUpper(state),
 		strings.Repeat(" ", barWidth),
-		colorFunc("█"), // Use the color function for the progress bar
+		colorFunc("█"),
 	)
 
 	bar := pb.ProgressBarTemplate(template).Start(total)
